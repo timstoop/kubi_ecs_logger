@@ -89,6 +89,9 @@ setup(
     # above.
     author_email='bartv@kumina.nl',  # Optional
 
+    # License using SPDX identifier
+    license='BSD-3-Clause',  # Optional
+
     # Classifiers help users find your project by categorizing it.
     #
     # For a list of valid classifiers, see https://pypi.org/classifiers/
@@ -102,9 +105,6 @@ setup(
         # Indicate who your project is intended for
         'Intended Audience :: Developers',
         'Topic :: System :: Logging',
-
-        # Pick your license as you wish
-        'License :: OSI Approved :: BSD License',
 
         # Specify the Python versions you support here. In particular, ensure
         # that you indicate whether you support Python 2, Python 3 or both.
