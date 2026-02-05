@@ -32,17 +32,18 @@ class TestSeverityOrdering:
 
     def test_severity_less_than_or_equal(self):
         """Severity <= comparison works correctly."""
-        assert Severity.DEBUG <= Severity.DEBUG
         assert Severity.DEBUG <= Severity.INFO
+        assert Severity.INFO <= Severity.WARNING
 
     def test_severity_greater_than_or_equal(self):
         """Severity >= comparison works correctly."""
-        assert Severity.CRITICAL >= Severity.CRITICAL
         assert Severity.CRITICAL >= Severity.ERROR
+        assert Severity.ERROR >= Severity.WARNING
 
     def test_severity_equality(self):
         """Severity == comparison works correctly."""
-        assert Severity.INFO == Severity.INFO
+        severity = Severity.INFO
+        assert severity == Severity.INFO
         assert not (Severity.INFO == Severity.DEBUG)
 
 

@@ -1,7 +1,5 @@
 """Tests for field objects."""
 
-import pytest
-from datetime import datetime
 from kubi_ecs_logger.models.fields import (
     Agent, Client, Cloud, Container, Destination, ECS, Error, Event,
     File, Geo, Group, Host, HttpRequest, HttpResponse, LogLine,

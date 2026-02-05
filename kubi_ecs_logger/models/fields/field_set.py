@@ -18,7 +18,7 @@ class FieldSet:
     specific ECS fields as __init__ parameters.
 
     Example:
-        >>> class Custom Field(FieldSet):
+        >>> class CustomField(FieldSet):
         ...     def __init__(self, my_field=None, **kwargs):
         ...         self.my_field = my_field
         ...         super().__init__(**kwargs)

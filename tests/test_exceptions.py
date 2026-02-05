@@ -1,6 +1,5 @@
 """Tests for custom exceptions."""
 
-import pytest
 from kubi_ecs_logger.exceptions import LoggerError, InvalidTypeError, InvalidSeverityError
 
 

@@ -7,7 +7,6 @@ they continue to work as documented.
 import json
 import sys
 from io import StringIO
-import pytest
 from kubi_ecs_logger import Logger, Severity
 
 

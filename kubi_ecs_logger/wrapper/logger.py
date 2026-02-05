@@ -396,11 +396,22 @@ class Logger:
         See:
             https://www.elastic.co/guide/en/ecs/current/ecs-ecs.html
         """
-        defaults = self._get_defaults_for(Client)
-        if defaults:
-            kwargs.update(defaults)
+        # Collect explicit parameters (only non-None values)
+        params = {}
+        if version is not None:
+            params['version'] = version
 
-        self._base.add_object(ECS(version=version))
+        # Merge with defaults (defaults don't override explicit params)
+        defaults = self._get_defaults_for(ECS)
+        if defaults:
+            for key, value in defaults.items():
+                if key not in params:
+                    params[key] = value
+
+        # Merge with kwargs (kwargs override everything)
+        params.update(kwargs)
+
+        self._base.add_object(ECS(**params))
         return self
 
     def error(self, code: Optional[str] = None, id: Optional[str] = None,
