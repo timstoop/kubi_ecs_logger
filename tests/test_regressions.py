@@ -133,3 +133,47 @@ class TestEcsMethodRegression:
             assert data2["error"]["code"] == "EXPLICIT_CODE"
         finally:
             sys.stdout = old_stdout
+
+
+class TestBaseMethodDefaultsPrecedence:
+    """Regression test for base() method defaults precedence."""
+
+    def test_base_kwargs_override_defaults(self):
+        """base() kwargs should override defaults, not vice versa.
+
+        Regression test for bug where defaults.update(kwargs) was backwards,
+        causing defaults to override kwargs instead of the correct precedence:
+        explicit params > kwargs > defaults
+        """
+        logger = Logger()
+        logger.defaults = {"base": {"custom_field": "from_defaults"}}
+
+        old_stdout = sys.stdout
+        sys.stdout = buffer = StringIO()
+
+        try:
+            # kwargs should override defaults
+            logger.base(message="test", custom_field="from_kwargs").out(Severity.INFO)
+            output = buffer.getvalue()
+            data = json.loads(output.strip())
+
+            assert data["custom_field"] == "from_kwargs"
+        finally:
+            sys.stdout = old_stdout
+
+    def test_base_defaults_used_when_no_kwargs(self):
+        """base() should use defaults when kwargs don't specify a value."""
+        logger = Logger()
+        logger.defaults = {"base": {"custom_field": "from_defaults"}}
+
+        old_stdout = sys.stdout
+        sys.stdout = buffer = StringIO()
+
+        try:
+            logger.base(message="test").out(Severity.INFO)
+            output = buffer.getvalue()
+            data = json.loads(output.strip())
+
+            assert data["custom_field"] == "from_defaults"
+        finally:
+            sys.stdout = old_stdout

@@ -173,15 +173,18 @@ class Logger:
         Example:
             >>> Logger().base(message="Application started", tags=["startup"])
         """
+        # Merge with defaults (defaults don't override kwargs)
         defaults = self._get_defaults_for(Base)
         if defaults:
-            kwargs.update(defaults)
+            for key, value in defaults.items():
+                if key not in kwargs:
+                    kwargs[key] = value
 
         self._base = Base(date=date, labels=labels, message=message, tags=tags, **kwargs)
         return self
 
-    def agent(self, ephemeral_id: str = None, id: str = None, name: str = None,
-              type: str = None, version: str = None, **kwargs):
+    def agent(self, ephemeral_id: Optional[str] = None, id: Optional[str] = None, name: Optional[str] = None,
+              type: Optional[str] = None, version: Optional[str] = None, **kwargs) -> 'Logger':
         """Add ECS agent fields.
 
         Information about the agent/client reporting the event.
@@ -218,8 +221,8 @@ class Logger:
         self._base.add_object(Agent(**params))
         return self
 
-    def client(self, address: str = None, bytes: int = None, domain: str = None, ip: str = None,
-               mac: str = None, packets: int = None, port: int = None, **kwargs):
+    def client(self, address: Optional[str] = None, bytes: Optional[int] = None, domain: Optional[str] = None, ip: Optional[str] = None,
+               mac: Optional[str] = None, packets: Optional[int] = None, port: Optional[int] = None, **kwargs) -> 'Logger':
         """Add ECS client fields.
 
         Fields about the client (initiator) side of a network connection.
@@ -260,9 +263,9 @@ class Logger:
         self._base.add_object(Client(**params))
         return self
 
-    def cloud(self, account_id: str = None, availability_zone: str = None, instance_id: str = None,
-              instance_name: str = None, machine_type: str = None, provider: str = None,
-              region: str = None, **kwargs):
+    def cloud(self, account_id: Optional[str] = None, availability_zone: Optional[str] = None, instance_id: Optional[str] = None,
+              instance_name: Optional[str] = None, machine_type: Optional[str] = None, provider: Optional[str] = None,
+              region: Optional[str] = None, **kwargs) -> 'Logger':
         """Add ECS cloud fields.
 
         Fields related to cloud or infrastructure provider information.
@@ -303,8 +306,8 @@ class Logger:
         self._base.add_object(Cloud(**params))
         return self
 
-    def container(self, id: str = None, image_name: str = None, image_tag: str = None,
-                  labels: dict = None, name: str = None, runtime: str = None, **kwargs):
+    def container(self, id: Optional[str] = None, image_name: Optional[str] = None, image_tag: Optional[str] = None,
+                  labels: dict = None, name: Optional[str] = None, runtime: Optional[str] = None, **kwargs) -> 'Logger':
         """Add ECS container fields.
 
         Runtime environment information for containerized applications.
@@ -343,8 +346,8 @@ class Logger:
         self._base.add_object(Container(**params))
         return self
 
-    def destination(self, address: str = None, bytes: int = None, domain: str = None, ip: str = None,
-                    mac: str = None, packets: int = None, port: int = None, **kwargs):
+    def destination(self, address: Optional[str] = None, bytes: Optional[int] = None, domain: Optional[str] = None, ip: Optional[str] = None,
+                    mac: Optional[str] = None, packets: Optional[int] = None, port: Optional[int] = None, **kwargs) -> 'Logger':
         """Add ECS destination fields.
 
         Fields about the destination (responder) side of a network connection.
@@ -385,7 +388,7 @@ class Logger:
         self._base.add_object(Destination(**params))
         return self
 
-    def ecs(self, version: str = None, **kwargs):
+    def ecs(self, version: Optional[str] = None, **kwargs) -> 'Logger':
         """Add ECS version information.
 
         Meta-information about the ECS version used.
@@ -512,10 +515,10 @@ class Logger:
         self._base.add_object(Event(**params))
         return self
 
-    def file(self, ctime: datetime = None, device: str = None, extension: str = None, gid: str = None,
-             group: str = None, inode: str = None, mode: str = None, mtime: datetime = None, owner: str = None,
-             path: str = None, size: int = None, target_path: str = None, type: str = None, uid: str = None,
-             **kwargs):
+    def file(self, ctime: Optional[datetime] = None, device: Optional[str] = None, extension: Optional[str] = None, gid: Optional[str] = None,
+             group: Optional[str] = None, inode: Optional[str] = None, mode: Optional[str] = None, mtime: Optional[datetime] = None, owner: Optional[str] = None,
+             path: Optional[str] = None, size: Optional[int] = None, target_path: Optional[str] = None, type: Optional[str] = None, uid: Optional[str] = None,
+             **kwargs) -> 'Logger':
         """Add ECS file fields.
 
         Information about files involved in the event.
@@ -570,9 +573,9 @@ class Logger:
         self._base.add_object(File(**params))
         return self
 
-    def geo(self, city_name: str = None, continent_name: str = None, country_iso_code: str = None,
-            country_name: str = None, location: dict = None, name: str = None, region_iso_code: str = None,
-            region_name: str = None, **kwargs):
+    def geo(self, city_name: Optional[str] = None, continent_name: Optional[str] = None, country_iso_code: Optional[str] = None,
+            country_name: Optional[str] = None, location: dict = None, name: Optional[str] = None, region_iso_code: Optional[str] = None,
+            region_name: Optional[str] = None, **kwargs) -> 'Logger':
         """Add ECS geo fields.
 
         Geolocation information for IP addresses.
@@ -615,7 +618,7 @@ class Logger:
         self._base.add_object(Geo(**params))
         return self
 
-    def group(self, id: str = None, name: str = None, **kwargs):
+    def group(self, id: Optional[str] = None, name: Optional[str] = None, **kwargs) -> 'Logger':
         """Add ECS group fields.
 
         Information about user groups.
@@ -646,8 +649,8 @@ class Logger:
         self._base.add_object(Group(**params))
         return self
 
-    def host(self, architecture: str = None, hostname: str = None, id: str = None, ip: str = None,
-             mac: str = None, name: str = None, type: str = None, **kwargs):
+    def host(self, architecture: Optional[str] = None, hostname: Optional[str] = None, id: Optional[str] = None, ip: Optional[str] = None,
+             mac: Optional[str] = None, name: Optional[str] = None, type: Optional[str] = None, **kwargs) -> 'Logger':
         """Add ECS host fields.
 
         Information about the host machine.
@@ -688,8 +691,8 @@ class Logger:
         self._base.add_object(Host(**params))
         return self
 
-    def http_request(self, body_bytes: int = None, body_content: str = None, bytes: int = None, method: str = None,
-                     referrer: str = None, version: str = None, **kwargs):
+    def http_request(self, body_bytes: Optional[int] = None, body_content: Optional[str] = None, bytes: Optional[int] = None, method: Optional[str] = None,
+                     referrer: Optional[str] = None, version: Optional[str] = None, **kwargs) -> 'Logger':
         """Add ECS HTTP request fields.
 
         Details about HTTP requests.
@@ -728,8 +731,8 @@ class Logger:
         self._base.add_object(HttpRequest(**params))
         return self
 
-    def http_response(self, body_bytes: int = None, body_content: str = None, bytes: int = None,
-                      status_code: str = None, version: str = None, **kwargs):
+    def http_response(self, body_bytes: Optional[int] = None, body_content: Optional[str] = None, bytes: Optional[int] = None,
+                      status_code: Optional[str] = None, version: Optional[str] = None, **kwargs) -> 'Logger':
         """Add ECS HTTP response fields.
 
         Details about HTTP responses.
@@ -766,7 +769,7 @@ class Logger:
         self._base.add_object(HttpResponse(**params))
         return self
 
-    def log(self, level: Union[str, Severity] = None, original: str = None, **kwargs) -> 'Logger':
+    def log(self, level: Union[str, Severity] = None, original: Optional[str] = None, **kwargs) -> 'Logger':
         """Add ECS log fields.
 
         Details about the log file or logging subsystem.
@@ -797,9 +800,9 @@ class Logger:
         self._base.add_object(LogLine(**params))
         return self
 
-    def network(self, application: str = None, bytes: int = None, community_id: str = None, direction: str = None,
-                forwarded_ip: str = None, iana_number: str = None, name: str = None, packets: int = None,
-                protocol: str = None, transport: str = None, type: str = None, **kwargs):
+    def network(self, application: Optional[str] = None, bytes: Optional[int] = None, community_id: Optional[str] = None, direction: Optional[str] = None,
+                forwarded_ip: Optional[str] = None, iana_number: Optional[str] = None, name: Optional[str] = None, packets: Optional[int] = None,
+                protocol: Optional[str] = None, transport: Optional[str] = None, type: Optional[str] = None, **kwargs) -> 'Logger':
         """Add ECS network fields.
 
         Information about network communication.
@@ -848,8 +851,8 @@ class Logger:
         self._base.add_object(Network(**params))
         return self
 
-    def observer(self, hostname: str = None, ip: str = None, mac: str = None, serial_number: str = None,
-                 type: str = None, vendor: str = None, version: str = None, **kwargs):
+    def observer(self, hostname: Optional[str] = None, ip: Optional[str] = None, mac: Optional[str] = None, serial_number: Optional[str] = None,
+                 type: Optional[str] = None, vendor: Optional[str] = None, version: Optional[str] = None, **kwargs) -> 'Logger':
         """Add ECS observer fields.
 
         Information about the observing entity (e.g., firewall, proxy).
@@ -890,7 +893,7 @@ class Logger:
         self._base.add_object(Observer(**params))
         return self
 
-    def organization(self, id: str = None, name: str = None, **kwargs):
+    def organization(self, id: Optional[str] = None, name: Optional[str] = None, **kwargs) -> 'Logger':
         """Add ECS organization fields.
 
         Information about the organization.
@@ -921,8 +924,8 @@ class Logger:
         self._base.add_object(Organization(**params))
         return self
 
-    def os(self, family: str = None, full: str = None, kernel: str = None, name: str = None, platform: str = None,
-           version: str = None, **kwargs):
+    def os(self, family: Optional[str] = None, full: Optional[str] = None, kernel: Optional[str] = None, name: Optional[str] = None, platform: Optional[str] = None,
+           version: Optional[str] = None, **kwargs) -> 'Logger':
         """Add ECS operating system fields.
 
         Information about the operating system.
@@ -961,9 +964,9 @@ class Logger:
         self._base.add_object(OS(**params))
         return self
 
-    def process(self, args: List[str] = None, executable: str = None, name: str = None, pid: int = None,
-                ppid: int = None, start: datetime = None, thread_id: int = None, title: str = None,
-                working_directory: str = None, **kwargs):
+    def process(self, args: Optional[List[str]] = None, executable: Optional[str] = None, name: Optional[str] = None, pid: Optional[int] = None,
+                ppid: Optional[int] = None, start: Optional[datetime] = None, thread_id: Optional[int] = None, title: Optional[str] = None,
+                working_directory: Optional[str] = None, **kwargs) -> 'Logger':
         """Add ECS process fields.
 
         Information about running processes.
@@ -1008,7 +1011,7 @@ class Logger:
         self._base.add_object(Process(**params))
         return self
 
-    def related(self, ip: str = None, **kwargs):
+    def related(self, ip: Optional[str] = None, **kwargs) -> 'Logger':
         """Add ECS related fields.
 
         Fields for relating entities (IPs, users, hosts).
@@ -1037,8 +1040,8 @@ class Logger:
         self._base.add_object(Related(**params))
         return self
 
-    def server(self, address: str = None, bytes: int = None, domain: str = None, ip: str = None, mac: str = None,
-               packets: int = None, port: int = None, **kwargs):
+    def server(self, address: Optional[str] = None, bytes: Optional[int] = None, domain: Optional[str] = None, ip: Optional[str] = None, mac: Optional[str] = None,
+               packets: Optional[int] = None, port: Optional[int] = None, **kwargs) -> 'Logger':
         """Add ECS server fields.
 
         Fields about the server (responder) side of a network connection.
@@ -1079,8 +1082,8 @@ class Logger:
         self._base.add_object(Server(**params))
         return self
 
-    def service(self, ephemeral_id: str = None, id: str = None, name: str = None, state: str = None, type: str = None,
-                version: str = None, **kwargs):
+    def service(self, ephemeral_id: Optional[str] = None, id: Optional[str] = None, name: Optional[str] = None, state: Optional[str] = None, type: Optional[str] = None,
+                version: Optional[str] = None, **kwargs) -> 'Logger':
         """Add ECS service fields.
 
         Information about the service generating events.
@@ -1119,8 +1122,8 @@ class Logger:
         self._base.add_object(Service(**params))
         return self
 
-    def source(self, address: str = None, bytes: int = None, domain: str = None, ip: str = None, mac: str = None,
-               packets: int = None, port: int = None, **kwargs):
+    def source(self, address: Optional[str] = None, bytes: Optional[int] = None, domain: Optional[str] = None, ip: Optional[str] = None, mac: Optional[str] = None,
+               packets: Optional[int] = None, port: Optional[int] = None, **kwargs) -> 'Logger':
         """Add ECS source fields.
 
         Fields about the source (initiator) side of a network connection.
@@ -1161,9 +1164,9 @@ class Logger:
         self._base.add_object(Source(**params))
         return self
 
-    def url(self, domain: str = None, fragment: str = None, full: str = None, original: str = None,
-            password: str = None, path: str = None, port: int = None, query: str = None, scheme: str = None,
-            username: str = None, **kwargs):
+    def url(self, domain: Optional[str] = None, fragment: Optional[str] = None, full: Optional[str] = None, original: Optional[str] = None,
+            password: Optional[str] = None, path: Optional[str] = None, port: Optional[int] = None, query: Optional[str] = None, scheme: Optional[str] = None,
+            username: Optional[str] = None, **kwargs) -> 'Logger':
         """Add ECS URL fields.
 
         Information about parsed URLs.
@@ -1260,8 +1263,8 @@ class Logger:
         self._base.add_object(User(**params))
         return self
 
-    def user_agent(self, device_name: str = None, name: str = None, original: str = None, version: str = None,
-                   **kwargs):
+    def user_agent(self, device_name: Optional[str] = None, name: Optional[str] = None, original: Optional[str] = None, version: Optional[str] = None,
+                   **kwargs) -> 'Logger':
         """Add ECS user agent fields.
 
         Information about the user agent (browser, app).
