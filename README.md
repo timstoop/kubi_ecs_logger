@@ -84,7 +84,95 @@ Logger() \
 # }
 ```
 
+## Available Fields
+
+The logger supports 27+ ECS field sets. Each field set has a corresponding method:
+
+- **agent** - Information about the agent/client reporting the event
+- **client** - Client side of a network connection
+- **cloud** - Cloud/infrastructure provider information
+- **container** - Container runtime environment
+- **destination** - Destination side of a network connection
+- **ecs** - ECS version information
+- **error** - Error details
+- **event** - Event circumstances and context
+- **file** - File information
+- **geo** - Geolocation data
+- **group** - User group information
+- **host** - Host machine information
+- **http_request** - HTTP request details
+- **http_response** - HTTP response details
+- **log** - Log file/subsystem metadata
+- **network** - Network communication details
+- **observer** - Observing entity (firewall, proxy, etc.)
+- **organization** - Organization information
+- **os** - Operating system information
+- **process** - Process information
+- **related** - Related entities
+- **server** - Server side of a network connection
+- **service** - Service generating events
+- **source** - Source side of a network connection
+- **url** - URL information
+- **user** - User information
+- **user_agent** - User agent (browser/app) information
+
+For detailed field documentation, see the [ECS Field Reference](https://www.elastic.co/guide/en/ecs/current/ecs-field-reference.html).
+
+## Type Hints and IDE Support
+
+This library includes comprehensive type hints for better IDE autocomplete and static type checking:
+
+```python
+from kubi_ecs_logger import Logger, Severity
+
+logger: Logger = Logger()
+logger.severity_output_level = Severity.WARNING  # Type checked
+logger.event(action="test")  # Parameters have type hints
+```
+
+## Exception Handling
+
+The library uses proper exceptions instead of assertions, making it safe for production use with Python optimization (`python -O`):
+
+```python
+from kubi_ecs_logger import Logger, InvalidTypeError, InvalidSeverityError, Severity
+
+logger = Logger()
+
+try:
+    logger.dev = "not a bool"  # Wrong type
+except InvalidTypeError as e:
+    print(f"Type error: {e}")
+
+try:
+    Severity.from_str("invalid")  # Invalid severity
+except InvalidSeverityError as e:
+    print(f"Severity error: {e}")
+```
+
+All library exceptions inherit from `LoggerError`, allowing you to catch any library-specific error:
+
+```python
+from kubi_ecs_logger.exceptions import LoggerError
+
+try:
+    # Your logging code
+    pass
+except LoggerError:
+    # Handle any kubi_ecs_logger error
+    pass
+```
+
 ## Dependencies
 | name        | version |
 |-------------|---------|
-| marshmallow | 3.15.0  |
+| marshmallow | ~3.26.2 |
+
+## Development
+
+To run tests:
+
+```bash
+pip install -e .[dev]
+pytest tests/
+```

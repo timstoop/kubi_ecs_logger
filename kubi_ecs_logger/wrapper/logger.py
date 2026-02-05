@@ -1,26 +1,57 @@
-"""
-Logger is a wrapper around ECS-based logging models.
-This class is initiated only ones and keeps the defaults and state.
-When the class is called the base is reinitialized.
-Also sending out the log will reinitialize the base.
+"""Logger wrapper for ECS-based JSON logging.
 
-Creating a log line:
-Logger(message="This is my log message.").event(action="logging").out(severity='debug')
-
-The first field object added since initialization of a specific type will be inserted,
-the following field object of the same time will be neglected.
+This module provides the Logger singleton class, which offers a fluent
+interface for building structured log entries conforming to the
+Elasticsearch Common Schema (ECS).
 """
 import sys
-from typing import Optional, List, Union
+from typing import Optional, List, Union, Dict, Any
 from datetime import datetime
 
 from kubi_ecs_logger.models.fields import *
 
 from kubi_ecs_logger.utils import pprint
 from kubi_ecs_logger.models import Base, BaseSchema, Severity
+from kubi_ecs_logger.exceptions import InvalidTypeError
 
 
 class Logger:
+    """Singleton logger for creating ECS-compliant JSON log entries.
+
+    This class implements a fluent interface for building structured logs.
+    It maintains state between method calls and resets after each log output.
+
+    Singleton Pattern:
+        Only one Logger instance exists per application. Each call to Logger()
+        returns the same instance and resets its internal Base object.
+
+    Fluent Interface:
+        All methods except out() return self, enabling method chaining:
+        Logger().event(action="login").user(name="alice").out(Severity.INFO)
+
+    State Management:
+        - Internal Base object holds current log entry data
+        - Reset occurs on initialization and after calling out()
+        - Configuration (dev, severity_output_level, defaults) persists
+
+    First Wins Policy:
+        Only the first instance of each field type is accepted per log entry.
+        Subsequent calls with the same field type are ignored.
+
+    Configuration:
+        - dev: Enable pretty-printed colored output for development
+        - severity_output_level: Minimum severity threshold for output
+        - defaults: Default field values merged into matching field types
+
+    Example:
+        >>> logger = Logger()
+        >>> logger.dev = True
+        >>> logger.severity_output_level = Severity.WARNING
+        >>> logger.event(action="login").user(name="alice").out(Severity.INFO)
+        # No output (INFO < WARNING threshold)
+        >>> logger.event(action="failed_login").out(Severity.ERROR)
+        # Output (ERROR >= WARNING threshold)
+    """
     __instance: 'Logger' = None
     _defaults: dict = {}
     _base: Base = None
@@ -34,35 +65,115 @@ class Logger:
         return cls.__instance
 
     @property
-    def dev(self):
+    def dev(self) -> bool:
+        """Get development mode status.
+
+        Returns:
+            True if development mode is enabled, False otherwise.
+        """
         return self._dev
 
     @dev.setter
-    def dev(self, value):
-        assert isinstance(value, bool)  # Check
+    def dev(self, value: bool) -> None:
+        """Set development mode.
+
+        When enabled, outputs colored, pretty-printed JSON instead of
+        compact single-line JSON.
+
+        Args:
+            value: True to enable development mode, False to disable.
+
+        Raises:
+            InvalidTypeError: If value is not a boolean.
+
+        Example:
+            >>> Logger().dev = True
+        """
+        if not isinstance(value, bool):
+            raise InvalidTypeError(f"dev must be a bool, got {type(value).__name__}")
         self._dev = value
 
     @property
-    def severity_output_level(self):
+    def severity_output_level(self) -> Severity:
+        """Get the minimum severity threshold for log output.
+
+        Returns:
+            The current severity threshold.
+        """
         return self._severity_output_level
 
     @severity_output_level.setter
-    def severity_output_level(self, value):
-        assert isinstance(value, Severity)  # Check
+    def severity_output_level(self, value: Severity) -> None:
+        """Set the minimum severity threshold for log output.
+
+        Only logs with severity >= this threshold will be output.
+
+        Args:
+            value: The minimum severity level.
+
+        Raises:
+            InvalidTypeError: If value is not a Severity enum member.
+
+        Example:
+            >>> Logger().severity_output_level = Severity.WARNING
+        """
+        if not isinstance(value, Severity):
+            raise InvalidTypeError(f"severity_output_level must be a Severity, got {type(value).__name__}")
         self._severity_output_level = value
 
     @property
-    def defaults(self):
+    def defaults(self) -> Dict[str, Dict[str, Any]]:
+        """Get the default field values.
+
+        Returns:
+            Dictionary mapping field type names to default values.
+        """
         return self._defaults
 
     @defaults.setter
-    def defaults(self, value):
-        assert isinstance(value, dict)  # Check
+    def defaults(self, value: Dict[str, Dict[str, Any]]) -> None:
+        """Set default field values.
+
+        Default values are merged into matching field types when they are added.
+        Field names should be lowercase (e.g., "event", "user").
+
+        Args:
+            value: Dictionary mapping field type names to default values.
+
+        Raises:
+            InvalidTypeError: If value is not a dictionary.
+
+        Example:
+            >>> Logger().defaults = {"event": {"dataset": "myapp"}}
+            >>> Logger().event(action="login").out()
+            # Output includes event.dataset="myapp"
+        """
+        if not isinstance(value, dict):
+            raise InvalidTypeError(f"defaults must be a dict, got {type(value).__name__}")
         self._defaults = value
 
-    def base(self, date: datetime = None, labels: dict = None, message: str = None,
-             tags: List[str] = None, **kwargs) -> 'Logger':
-        defaults = self.__get_defaults_for(Base)
+    def base(self, date: Optional[datetime] = None, labels: Optional[Dict[str, Any]] = None,
+             message: Optional[str] = None, tags: Optional[List[str]] = None, **kwargs) -> 'Logger':
+        """Set or reset the base log entry fields.
+
+        This method initializes or resets the internal Base object with common
+        log fields. It is called automatically when Logger() is instantiated
+        and after out() is called.
+
+        Args:
+            date: Timestamp for the log entry (defaults to now)
+            labels: Dictionary of custom key-value metadata
+            message: The log message text
+            tags: List of string tags for categorization
+            **kwargs: Additional custom fields
+
+        Returns:
+            Logger instance for method chaining.
+
+        Example:
+            >>> Logger().base(message="Application started", tags=["startup"])
+        """
+        defaults = self._get_defaults_for(Base)
         if defaults:
             kwargs.update(defaults)
 
@@ -71,301 +182,1172 @@ class Logger:
 
     def agent(self, ephemeral_id: str = None, id: str = None, name: str = None,
               type: str = None, version: str = None, **kwargs):
-        defaults = self.__get_defaults_for(Agent)
-        if defaults:
-            kwargs.update(defaults)
+        """Add ECS agent fields.
 
-        self._base.add_object(Agent(ephemeral_id=ephemeral_id, id=id, name=name, type=type, version=version, **kwargs))
+        Information about the agent/client reporting the event.
+
+        Returns:
+            Logger instance for method chaining.
+
+        See:
+            https://www.elastic.co/guide/en/ecs/current/ecs-agent.html
+        """
+        # Collect explicit parameters (only non-None values)
+        params = {}
+        if ephemeral_id is not None:
+            params['ephemeral_id'] = ephemeral_id
+        if id is not None:
+            params['id'] = id
+        if name is not None:
+            params['name'] = name
+        if type is not None:
+            params['type'] = type
+        if version is not None:
+            params['version'] = version
+
+        # Merge with defaults (defaults don't override explicit params)
+        defaults = self._get_defaults_for(Agent)
+        if defaults:
+            for key, value in defaults.items():
+                if key not in params:
+                    params[key] = value
+
+        # Merge with kwargs (kwargs override everything)
+        params.update(kwargs)
+
+        self._base.add_object(Agent(**params))
         return self
 
     def client(self, address: str = None, bytes: int = None, domain: str = None, ip: str = None,
                mac: str = None, packets: int = None, port: int = None, **kwargs):
-        defaults = self.__get_defaults_for(Client)
-        if defaults:
-            kwargs.update(defaults)
+        """Add ECS client fields.
 
-        self._base.add_object(Client(address=address, bytes=bytes, domain=domain, ip=ip, mac=mac, packets=packets,
-                                     port=port, **kwargs))
+        Fields about the client (initiator) side of a network connection.
+
+        Returns:
+            Logger instance for method chaining.
+
+        See:
+            https://www.elastic.co/guide/en/ecs/current/ecs-client.html
+        """
+        # Collect explicit parameters (only non-None values)
+        params = {}
+        if address is not None:
+            params['address'] = address
+        if bytes is not None:
+            params['bytes'] = bytes
+        if domain is not None:
+            params['domain'] = domain
+        if ip is not None:
+            params['ip'] = ip
+        if mac is not None:
+            params['mac'] = mac
+        if packets is not None:
+            params['packets'] = packets
+        if port is not None:
+            params['port'] = port
+
+        # Merge with defaults (defaults don't override explicit params)
+        defaults = self._get_defaults_for(Client)
+        if defaults:
+            for key, value in defaults.items():
+                if key not in params:
+                    params[key] = value
+
+        # Merge with kwargs (kwargs override everything)
+        params.update(kwargs)
+
+        self._base.add_object(Client(**params))
         return self
 
     def cloud(self, account_id: str = None, availability_zone: str = None, instance_id: str = None,
               instance_name: str = None, machine_type: str = None, provider: str = None,
               region: str = None, **kwargs):
-        defaults = self.__get_defaults_for(Cloud)
-        if defaults:
-            kwargs.update(defaults)
+        """Add ECS cloud fields.
 
-        self._base.add_object(Cloud(account_id=account_id, availability_zone=availability_zone, instance_id=instance_id,
-                                    instance_name=instance_name, machine_type=machine_type, provider=provider,
-                                    region=region, **kwargs))
+        Fields related to cloud or infrastructure provider information.
+
+        Returns:
+            Logger instance for method chaining.
+
+        See:
+            https://www.elastic.co/guide/en/ecs/current/ecs-cloud.html
+        """
+        # Collect explicit parameters (only non-None values)
+        params = {}
+        if account_id is not None:
+            params['account_id'] = account_id
+        if availability_zone is not None:
+            params['availability_zone'] = availability_zone
+        if instance_id is not None:
+            params['instance_id'] = instance_id
+        if instance_name is not None:
+            params['instance_name'] = instance_name
+        if machine_type is not None:
+            params['machine_type'] = machine_type
+        if provider is not None:
+            params['provider'] = provider
+        if region is not None:
+            params['region'] = region
+
+        # Merge with defaults (defaults don't override explicit params)
+        defaults = self._get_defaults_for(Cloud)
+        if defaults:
+            for key, value in defaults.items():
+                if key not in params:
+                    params[key] = value
+
+        # Merge with kwargs (kwargs override everything)
+        params.update(kwargs)
+
+        self._base.add_object(Cloud(**params))
         return self
 
     def container(self, id: str = None, image_name: str = None, image_tag: str = None,
                   labels: dict = None, name: str = None, runtime: str = None, **kwargs):
-        defaults = self.__get_defaults_for(Container)
-        if defaults:
-            kwargs.update(defaults)
+        """Add ECS container fields.
 
-        self._base.add_object(Container(id=id, image_name=image_name, image_tag=image_tag, labels=labels,
-                                        name=name, runtime=runtime, **kwargs))
+        Runtime environment information for containerized applications.
+
+        Returns:
+            Logger instance for method chaining.
+
+        See:
+            https://www.elastic.co/guide/en/ecs/current/ecs-container.html
+        """
+        # Collect explicit parameters (only non-None values)
+        params = {}
+        if id is not None:
+            params['id'] = id
+        if image_name is not None:
+            params['image_name'] = image_name
+        if image_tag is not None:
+            params['image_tag'] = image_tag
+        if labels is not None:
+            params['labels'] = labels
+        if name is not None:
+            params['name'] = name
+        if runtime is not None:
+            params['runtime'] = runtime
+
+        # Merge with defaults (defaults don't override explicit params)
+        defaults = self._get_defaults_for(Container)
+        if defaults:
+            for key, value in defaults.items():
+                if key not in params:
+                    params[key] = value
+
+        # Merge with kwargs (kwargs override everything)
+        params.update(kwargs)
+
+        self._base.add_object(Container(**params))
         return self
 
     def destination(self, address: str = None, bytes: int = None, domain: str = None, ip: str = None,
                     mac: str = None, packets: int = None, port: int = None, **kwargs):
-        defaults = self.__get_defaults_for(Destination)
+        """Add ECS destination fields.
+
+        Fields about the destination (responder) side of a network connection.
+
+        Returns:
+            Logger instance for method chaining.
+
+        See:
+            https://www.elastic.co/guide/en/ecs/current/ecs-destination.html
+        """
+        # Collect explicit parameters (only non-None values)
+        params = {}
+        if address is not None:
+            params['address'] = address
+        if bytes is not None:
+            params['bytes'] = bytes
+        if domain is not None:
+            params['domain'] = domain
+        if ip is not None:
+            params['ip'] = ip
+        if mac is not None:
+            params['mac'] = mac
+        if packets is not None:
+            params['packets'] = packets
+        if port is not None:
+            params['port'] = port
+
+        # Merge with defaults (defaults don't override explicit params)
+        defaults = self._get_defaults_for(Destination)
         if defaults:
-            kwargs.update(defaults)
-        self._base.add_object(Destination(address=address, bytes=bytes, domain=domain, ip=ip, mac=mac, packets=packets,
-                                          port=port, **kwargs))
+            for key, value in defaults.items():
+                if key not in params:
+                    params[key] = value
+
+        # Merge with kwargs (kwargs override everything)
+        params.update(kwargs)
+
+        self._base.add_object(Destination(**params))
         return self
 
     def ecs(self, version: str = None, **kwargs):
-        defaults = self.__get_defaults_for(Client)
+        """Add ECS version information.
+
+        Meta-information about the ECS version used.
+
+        Returns:
+            Logger instance for method chaining.
+
+        See:
+            https://www.elastic.co/guide/en/ecs/current/ecs-ecs.html
+        """
+        defaults = self._get_defaults_for(Client)
         if defaults:
             kwargs.update(defaults)
 
         self._base.add_object(ECS(version=version))
         return self
 
-    def error(self, code: str = None, id: str = None, message: str = None, **kwargs) -> 'Logger':
-        defaults = self.__get_defaults_for(Error)
-        if defaults:
-            kwargs.update(defaults)
+    def error(self, code: Optional[str] = None, id: Optional[str] = None,
+              message: Optional[str] = None, **kwargs) -> 'Logger':
+        """Add ECS error fields to the log entry.
 
-        self._base.add_object(Error(code=code, id=id, message=message, **kwargs))
+        The error fields capture details about errors that occurred during event processing.
+
+        Args:
+            code: Error code describing the error
+            id: Unique identifier for the error
+            message: Error message text
+            **kwargs: Additional error fields (e.g., stack_trace, type)
+
+        Returns:
+            Logger instance for method chaining.
+
+        Example:
+            >>> Logger().error(code="ERR_AUTH_FAILED", message="Invalid credentials")
+
+        See:
+            https://www.elastic.co/guide/en/ecs/current/ecs-error.html
+        """
+        # Collect explicit parameters (only non-None values)
+        params = {}
+        if code is not None:
+            params['code'] = code
+        if id is not None:
+            params['id'] = id
+        if message is not None:
+            params['message'] = message
+
+        # Merge with defaults (defaults don't override explicit params)
+        defaults = self._get_defaults_for(Error)
+        if defaults:
+            for key, value in defaults.items():
+                if key not in params:
+                    params[key] = value
+
+        # Merge with kwargs (kwargs override everything)
+        params.update(kwargs)
+
+        self._base.add_object(Error(**params))
         return self
 
-    def event(self, action: str = None, category: str = None, created: datetime = None,
-              dataset: str = None, risk_score: float = None, severity: int = None,
+    def event(self, action: Optional[str] = None, category: Optional[str] = None,
+              created: Optional[datetime] = None, dataset: Optional[str] = None,
+              risk_score: Optional[float] = None, severity: Optional[int] = None,
               **kwargs) -> 'Logger':
-        defaults = self.__get_defaults_for(Event)
-        if defaults:
-            kwargs.update(defaults)
+        """Add ECS event fields to the log entry.
 
-        self._base.add_object(Event(action=action, category=category, created=created, dataset=dataset,
-                                    risk_score=risk_score, severity=severity, **kwargs))
+        The event fields describe the circumstances of an observed event,
+        such as actions taken, their outcomes, and contextual information.
+
+        Args:
+            action: The action captured by the event (e.g., "user-login", "file-delete")
+            category: Event category (e.g., "authentication", "file")
+            created: When the event was created
+            dataset: Name of the dataset for event correlation
+            risk_score: Risk score calculated for the event (0-100)
+            severity: Numeric severity of the event
+            **kwargs: Additional event fields (e.g., duration, outcome, type)
+
+        Returns:
+            Logger instance for method chaining.
+
+        Example:
+            >>> Logger().event(action="user-login", outcome="success", category="authentication")
+
+        See:
+            https://www.elastic.co/guide/en/ecs/current/ecs-event.html
+        """
+        # Collect explicit parameters (only non-None values)
+        params = {}
+        if action is not None:
+            params['action'] = action
+        if category is not None:
+            params['category'] = category
+        if created is not None:
+            params['created'] = created
+        if dataset is not None:
+            params['dataset'] = dataset
+        if risk_score is not None:
+            params['risk_score'] = risk_score
+        if severity is not None:
+            params['severity'] = severity
+
+        # Merge with defaults (defaults don't override explicit params)
+        defaults = self._get_defaults_for(Event)
+        if defaults:
+            for key, value in defaults.items():
+                if key not in params:
+                    params[key] = value
+
+        # Merge with kwargs (kwargs override everything)
+        params.update(kwargs)
+
+        self._base.add_object(Event(**params))
         return self
 
     def file(self, ctime: datetime = None, device: str = None, extension: str = None, gid: str = None,
              group: str = None, inode: str = None, mode: str = None, mtime: datetime = None, owner: str = None,
              path: str = None, size: int = None, target_path: str = None, type: str = None, uid: str = None,
              **kwargs):
-        defaults = self.__get_defaults_for(File)
-        if defaults:
-            kwargs.update(defaults)
+        """Add ECS file fields.
 
-        self._base.add_object(File(ctime=ctime, device=device, extension=extension, gid=gid, group=group,
-                                   inode=inode, mode=mode, mtime=mtime, owner=owner, path=path, size=size,
-                                   target_path=target_path, type=type, uid=uid, **kwargs))
+        Information about files involved in the event.
+
+        Returns:
+            Logger instance for method chaining.
+
+        See:
+            https://www.elastic.co/guide/en/ecs/current/ecs-file.html
+        """
+        # Collect explicit parameters (only non-None values)
+        params = {}
+        if ctime is not None:
+            params['ctime'] = ctime
+        if device is not None:
+            params['device'] = device
+        if extension is not None:
+            params['extension'] = extension
+        if gid is not None:
+            params['gid'] = gid
+        if group is not None:
+            params['group'] = group
+        if inode is not None:
+            params['inode'] = inode
+        if mode is not None:
+            params['mode'] = mode
+        if mtime is not None:
+            params['mtime'] = mtime
+        if owner is not None:
+            params['owner'] = owner
+        if path is not None:
+            params['path'] = path
+        if size is not None:
+            params['size'] = size
+        if target_path is not None:
+            params['target_path'] = target_path
+        if type is not None:
+            params['type'] = type
+        if uid is not None:
+            params['uid'] = uid
+
+        # Merge with defaults (defaults don't override explicit params)
+        defaults = self._get_defaults_for(File)
+        if defaults:
+            for key, value in defaults.items():
+                if key not in params:
+                    params[key] = value
+
+        # Merge with kwargs (kwargs override everything)
+        params.update(kwargs)
+
+        self._base.add_object(File(**params))
         return self
 
     def geo(self, city_name: str = None, continent_name: str = None, country_iso_code: str = None,
             country_name: str = None, location: dict = None, name: str = None, region_iso_code: str = None,
             region_name: str = None, **kwargs):
-        defaults = self.__get_defaults_for(Geo)
-        if defaults:
-            kwargs.update(defaults)
+        """Add ECS geo fields.
 
-        self._base.add_object(Geo(city_name=city_name, continent_name=continent_name, country_iso_code=country_iso_code,
-                                  country_name=country_name, location=location, name=name,
-                                  region_iso_code=region_iso_code,
-                                  region_name=region_name, **kwargs))
+        Geolocation information for IP addresses.
+
+        Returns:
+            Logger instance for method chaining.
+
+        See:
+            https://www.elastic.co/guide/en/ecs/current/ecs-geo.html
+        """
+        # Collect explicit parameters (only non-None values)
+        params = {}
+        if city_name is not None:
+            params['city_name'] = city_name
+        if continent_name is not None:
+            params['continent_name'] = continent_name
+        if country_iso_code is not None:
+            params['country_iso_code'] = country_iso_code
+        if country_name is not None:
+            params['country_name'] = country_name
+        if location is not None:
+            params['location'] = location
+        if name is not None:
+            params['name'] = name
+        if region_iso_code is not None:
+            params['region_iso_code'] = region_iso_code
+        if region_name is not None:
+            params['region_name'] = region_name
+
+        # Merge with defaults (defaults don't override explicit params)
+        defaults = self._get_defaults_for(Geo)
+        if defaults:
+            for key, value in defaults.items():
+                if key not in params:
+                    params[key] = value
+
+        # Merge with kwargs (kwargs override everything)
+        params.update(kwargs)
+
+        self._base.add_object(Geo(**params))
         return self
 
     def group(self, id: str = None, name: str = None, **kwargs):
-        defaults = self.__get_defaults_for(Group)
-        if defaults:
-            kwargs.update(defaults)
+        """Add ECS group fields.
 
-        self._base.add_object(Group(id=id, name=name, **kwargs))
+        Information about user groups.
+
+        Returns:
+            Logger instance for method chaining.
+
+        See:
+            https://www.elastic.co/guide/en/ecs/current/ecs-group.html
+        """
+        # Collect explicit parameters (only non-None values)
+        params = {}
+        if id is not None:
+            params['id'] = id
+        if name is not None:
+            params['name'] = name
+
+        # Merge with defaults (defaults don't override explicit params)
+        defaults = self._get_defaults_for(Group)
+        if defaults:
+            for key, value in defaults.items():
+                if key not in params:
+                    params[key] = value
+
+        # Merge with kwargs (kwargs override everything)
+        params.update(kwargs)
+
+        self._base.add_object(Group(**params))
         return self
 
     def host(self, architecture: str = None, hostname: str = None, id: str = None, ip: str = None,
              mac: str = None, name: str = None, type: str = None, **kwargs):
-        defaults = self.__get_defaults_for(Host)
-        if defaults:
-            kwargs.update(defaults)
+        """Add ECS host fields.
 
-        self._base.add_object(Host(architecture=architecture, hostname=hostname, id=id, ip=ip, mac=mac,
-                                   name=name, type=type, **kwargs))
+        Information about the host machine.
+
+        Returns:
+            Logger instance for method chaining.
+
+        See:
+            https://www.elastic.co/guide/en/ecs/current/ecs-host.html
+        """
+        # Collect explicit parameters (only non-None values)
+        params = {}
+        if architecture is not None:
+            params['architecture'] = architecture
+        if hostname is not None:
+            params['hostname'] = hostname
+        if id is not None:
+            params['id'] = id
+        if ip is not None:
+            params['ip'] = ip
+        if mac is not None:
+            params['mac'] = mac
+        if name is not None:
+            params['name'] = name
+        if type is not None:
+            params['type'] = type
+
+        # Merge with defaults (defaults don't override explicit params)
+        defaults = self._get_defaults_for(Host)
+        if defaults:
+            for key, value in defaults.items():
+                if key not in params:
+                    params[key] = value
+
+        # Merge with kwargs (kwargs override everything)
+        params.update(kwargs)
+
+        self._base.add_object(Host(**params))
         return self
 
     def http_request(self, body_bytes: int = None, body_content: str = None, bytes: int = None, method: str = None,
                      referrer: str = None, version: str = None, **kwargs):
-        defaults = self.__get_defaults_for(HttpRequest)
-        if defaults:
-            kwargs.update(defaults)
+        """Add ECS HTTP request fields.
 
-        self._base.add_object(HttpRequest(body_bytes=body_bytes, body_content=body_content, bytes=bytes, method=method,
-                                          referrer=referrer, version=version, **kwargs))
+        Details about HTTP requests.
+
+        Returns:
+            Logger instance for method chaining.
+
+        See:
+            https://www.elastic.co/guide/en/ecs/current/ecs-http.html
+        """
+        # Collect explicit parameters (only non-None values)
+        params = {}
+        if body_bytes is not None:
+            params['body_bytes'] = body_bytes
+        if body_content is not None:
+            params['body_content'] = body_content
+        if bytes is not None:
+            params['bytes'] = bytes
+        if method is not None:
+            params['method'] = method
+        if referrer is not None:
+            params['referrer'] = referrer
+        if version is not None:
+            params['version'] = version
+
+        # Merge with defaults (defaults don't override explicit params)
+        defaults = self._get_defaults_for(HttpRequest)
+        if defaults:
+            for key, value in defaults.items():
+                if key not in params:
+                    params[key] = value
+
+        # Merge with kwargs (kwargs override everything)
+        params.update(kwargs)
+
+        self._base.add_object(HttpRequest(**params))
         return self
 
     def http_response(self, body_bytes: int = None, body_content: str = None, bytes: int = None,
                       status_code: str = None, version: str = None, **kwargs):
-        defaults = self.__get_defaults_for(HttpResponse)
-        if defaults:
-            kwargs.update(defaults)
+        """Add ECS HTTP response fields.
 
-        self._base.add_object(HttpResponse(body_bytes=body_bytes, body_content=body_content, bytes=bytes,
-                                           status_code=status_code, version=version, **kwargs))
+        Details about HTTP responses.
+
+        Returns:
+            Logger instance for method chaining.
+
+        See:
+            https://www.elastic.co/guide/en/ecs/current/ecs-http.html
+        """
+        # Collect explicit parameters (only non-None values)
+        params = {}
+        if body_bytes is not None:
+            params['body_bytes'] = body_bytes
+        if body_content is not None:
+            params['body_content'] = body_content
+        if bytes is not None:
+            params['bytes'] = bytes
+        if status_code is not None:
+            params['status_code'] = status_code
+        if version is not None:
+            params['version'] = version
+
+        # Merge with defaults (defaults don't override explicit params)
+        defaults = self._get_defaults_for(HttpResponse)
+        if defaults:
+            for key, value in defaults.items():
+                if key not in params:
+                    params[key] = value
+
+        # Merge with kwargs (kwargs override everything)
+        params.update(kwargs)
+
+        self._base.add_object(HttpResponse(**params))
         return self
 
     def log(self, level: Union[str, Severity] = None, original: str = None, **kwargs) -> 'Logger':
-        defaults = self.__get_defaults_for(LogLine)
-        if defaults:
-            kwargs.update(defaults)
+        """Add ECS log fields.
 
-        self._base.add_object(LogLine(level=level, original=original, **kwargs))
+        Details about the log file or logging subsystem.
+
+        Returns:
+            Logger instance for method chaining.
+
+        See:
+            https://www.elastic.co/guide/en/ecs/current/ecs-log.html
+        """
+        # Collect explicit parameters (only non-None values)
+        params = {}
+        if level is not None:
+            params['level'] = level
+        if original is not None:
+            params['original'] = original
+
+        # Merge with defaults (defaults don't override explicit params)
+        defaults = self._get_defaults_for(LogLine)
+        if defaults:
+            for key, value in defaults.items():
+                if key not in params:
+                    params[key] = value
+
+        # Merge with kwargs (kwargs override everything)
+        params.update(kwargs)
+
+        self._base.add_object(LogLine(**params))
         return self
 
     def network(self, application: str = None, bytes: int = None, community_id: str = None, direction: str = None,
                 forwarded_ip: str = None, iana_number: str = None, name: str = None, packets: int = None,
                 protocol: str = None, transport: str = None, type: str = None, **kwargs):
-        defaults = self.__get_defaults_for(Network)
-        if defaults:
-            kwargs.update(defaults)
+        """Add ECS network fields.
 
-        self._base.add_object(Network(application=application, bytes=bytes, community_id=community_id,
-                                      direction=direction, forwarded_ip=forwarded_ip, iana_number=iana_number,
-                                      name=name, packets=packets, protocol=protocol, transport=transport, type=type,
-                                      **kwargs))
+        Information about network communication.
+
+        Returns:
+            Logger instance for method chaining.
+
+        See:
+            https://www.elastic.co/guide/en/ecs/current/ecs-network.html
+        """
+        # Collect explicit parameters (only non-None values)
+        params = {}
+        if application is not None:
+            params['application'] = application
+        if bytes is not None:
+            params['bytes'] = bytes
+        if community_id is not None:
+            params['community_id'] = community_id
+        if direction is not None:
+            params['direction'] = direction
+        if forwarded_ip is not None:
+            params['forwarded_ip'] = forwarded_ip
+        if iana_number is not None:
+            params['iana_number'] = iana_number
+        if name is not None:
+            params['name'] = name
+        if packets is not None:
+            params['packets'] = packets
+        if protocol is not None:
+            params['protocol'] = protocol
+        if transport is not None:
+            params['transport'] = transport
+        if type is not None:
+            params['type'] = type
+
+        # Merge with defaults (defaults don't override explicit params)
+        defaults = self._get_defaults_for(Network)
+        if defaults:
+            for key, value in defaults.items():
+                if key not in params:
+                    params[key] = value
+
+        # Merge with kwargs (kwargs override everything)
+        params.update(kwargs)
+
+        self._base.add_object(Network(**params))
         return self
 
     def observer(self, hostname: str = None, ip: str = None, mac: str = None, serial_number: str = None,
                  type: str = None, vendor: str = None, version: str = None, **kwargs):
-        defaults = self.__get_defaults_for(Observer)
-        if defaults:
-            kwargs.update(defaults)
+        """Add ECS observer fields.
 
-        self._base.add_object(Observer(hostname=hostname, ip=ip, mac=mac, serial_number=serial_number, type=type,
-                                       vendor=vendor, version=version, **kwargs))
+        Information about the observing entity (e.g., firewall, proxy).
+
+        Returns:
+            Logger instance for method chaining.
+
+        See:
+            https://www.elastic.co/guide/en/ecs/current/ecs-observer.html
+        """
+        # Collect explicit parameters (only non-None values)
+        params = {}
+        if hostname is not None:
+            params['hostname'] = hostname
+        if ip is not None:
+            params['ip'] = ip
+        if mac is not None:
+            params['mac'] = mac
+        if serial_number is not None:
+            params['serial_number'] = serial_number
+        if type is not None:
+            params['type'] = type
+        if vendor is not None:
+            params['vendor'] = vendor
+        if version is not None:
+            params['version'] = version
+
+        # Merge with defaults (defaults don't override explicit params)
+        defaults = self._get_defaults_for(Observer)
+        if defaults:
+            for key, value in defaults.items():
+                if key not in params:
+                    params[key] = value
+
+        # Merge with kwargs (kwargs override everything)
+        params.update(kwargs)
+
+        self._base.add_object(Observer(**params))
         return self
 
     def organization(self, id: str = None, name: str = None, **kwargs):
-        defaults = self.__get_defaults_for(Organization)
-        if defaults:
-            kwargs.update(defaults)
+        """Add ECS organization fields.
 
-        self._base.add_object(Organization(id=id, name=name, **kwargs))
+        Information about the organization.
+
+        Returns:
+            Logger instance for method chaining.
+
+        See:
+            https://www.elastic.co/guide/en/ecs/current/ecs-organization.html
+        """
+        # Collect explicit parameters (only non-None values)
+        params = {}
+        if id is not None:
+            params['id'] = id
+        if name is not None:
+            params['name'] = name
+
+        # Merge with defaults (defaults don't override explicit params)
+        defaults = self._get_defaults_for(Organization)
+        if defaults:
+            for key, value in defaults.items():
+                if key not in params:
+                    params[key] = value
+
+        # Merge with kwargs (kwargs override everything)
+        params.update(kwargs)
+
+        self._base.add_object(Organization(**params))
         return self
 
     def os(self, family: str = None, full: str = None, kernel: str = None, name: str = None, platform: str = None,
            version: str = None, **kwargs):
-        defaults = self.__get_defaults_for(OS)
-        if defaults:
-            kwargs.update(defaults)
+        """Add ECS operating system fields.
 
-        self._base.add_object(OS(family=family, full=full, kernel=kernel, name=name, platform=platform, version=version,
-                                 **kwargs))
+        Information about the operating system.
+
+        Returns:
+            Logger instance for method chaining.
+
+        See:
+            https://www.elastic.co/guide/en/ecs/current/ecs-os.html
+        """
+        # Collect explicit parameters (only non-None values)
+        params = {}
+        if family is not None:
+            params['family'] = family
+        if full is not None:
+            params['full'] = full
+        if kernel is not None:
+            params['kernel'] = kernel
+        if name is not None:
+            params['name'] = name
+        if platform is not None:
+            params['platform'] = platform
+        if version is not None:
+            params['version'] = version
+
+        # Merge with defaults (defaults don't override explicit params)
+        defaults = self._get_defaults_for(OS)
+        if defaults:
+            for key, value in defaults.items():
+                if key not in params:
+                    params[key] = value
+
+        # Merge with kwargs (kwargs override everything)
+        params.update(kwargs)
+
+        self._base.add_object(OS(**params))
         return self
 
     def process(self, args: List[str] = None, executable: str = None, name: str = None, pid: int = None,
                 ppid: int = None, start: datetime = None, thread_id: int = None, title: str = None,
                 working_directory: str = None, **kwargs):
-        defaults = self.__get_defaults_for(Process)
-        if defaults:
-            kwargs.update(defaults)
+        """Add ECS process fields.
 
-        self._base.add_object(Process(args=args, executable=executable, name=name, pid=pid, ppid=ppid, start=start,
-                                      thread_id=thread_id, title=title, working_directory=working_directory, **kwargs))
+        Information about running processes.
+
+        Returns:
+            Logger instance for method chaining.
+
+        See:
+            https://www.elastic.co/guide/en/ecs/current/ecs-process.html
+        """
+        # Collect explicit parameters (only non-None values)
+        params = {}
+        if args is not None:
+            params['args'] = args
+        if executable is not None:
+            params['executable'] = executable
+        if name is not None:
+            params['name'] = name
+        if pid is not None:
+            params['pid'] = pid
+        if ppid is not None:
+            params['ppid'] = ppid
+        if start is not None:
+            params['start'] = start
+        if thread_id is not None:
+            params['thread_id'] = thread_id
+        if title is not None:
+            params['title'] = title
+        if working_directory is not None:
+            params['working_directory'] = working_directory
+
+        # Merge with defaults (defaults don't override explicit params)
+        defaults = self._get_defaults_for(Process)
+        if defaults:
+            for key, value in defaults.items():
+                if key not in params:
+                    params[key] = value
+
+        # Merge with kwargs (kwargs override everything)
+        params.update(kwargs)
+
+        self._base.add_object(Process(**params))
         return self
 
     def related(self, ip: str = None, **kwargs):
-        defaults = self.__get_defaults_for(Related)
-        if defaults:
-            kwargs.update(defaults)
+        """Add ECS related fields.
 
-        self._base.add_object(Related(ip=ip, **kwargs))
+        Fields for relating entities (IPs, users, hosts).
+
+        Returns:
+            Logger instance for method chaining.
+
+        See:
+            https://www.elastic.co/guide/en/ecs/current/ecs-related.html
+        """
+        # Collect explicit parameters (only non-None values)
+        params = {}
+        if ip is not None:
+            params['ip'] = ip
+
+        # Merge with defaults (defaults don't override explicit params)
+        defaults = self._get_defaults_for(Related)
+        if defaults:
+            for key, value in defaults.items():
+                if key not in params:
+                    params[key] = value
+
+        # Merge with kwargs (kwargs override everything)
+        params.update(kwargs)
+
+        self._base.add_object(Related(**params))
         return self
 
     def server(self, address: str = None, bytes: int = None, domain: str = None, ip: str = None, mac: str = None,
                packets: int = None, port: int = None, **kwargs):
-        defaults = self.__get_defaults_for(Server)
-        if defaults:
-            kwargs.update(defaults)
+        """Add ECS server fields.
 
-        self._base.add_object(Server(address=address, bytes=bytes, domain=domain, ip=ip, mac=mac, packets=packets,
-                                     port=port, **kwargs))
+        Fields about the server (responder) side of a network connection.
+
+        Returns:
+            Logger instance for method chaining.
+
+        See:
+            https://www.elastic.co/guide/en/ecs/current/ecs-server.html
+        """
+        # Collect explicit parameters (only non-None values)
+        params = {}
+        if address is not None:
+            params['address'] = address
+        if bytes is not None:
+            params['bytes'] = bytes
+        if domain is not None:
+            params['domain'] = domain
+        if ip is not None:
+            params['ip'] = ip
+        if mac is not None:
+            params['mac'] = mac
+        if packets is not None:
+            params['packets'] = packets
+        if port is not None:
+            params['port'] = port
+
+        # Merge with defaults (defaults don't override explicit params)
+        defaults = self._get_defaults_for(Server)
+        if defaults:
+            for key, value in defaults.items():
+                if key not in params:
+                    params[key] = value
+
+        # Merge with kwargs (kwargs override everything)
+        params.update(kwargs)
+
+        self._base.add_object(Server(**params))
         return self
 
     def service(self, ephemeral_id: str = None, id: str = None, name: str = None, state: str = None, type: str = None,
                 version: str = None, **kwargs):
-        defaults = self.__get_defaults_for(Service)
-        if defaults:
-            kwargs.update(defaults)
+        """Add ECS service fields.
 
-        self._base.add_object(Service(ephemeral_id=ephemeral_id, id=id, name=name, state=state, type=type,
-                                      version=version, **kwargs))
+        Information about the service generating events.
+
+        Returns:
+            Logger instance for method chaining.
+
+        See:
+            https://www.elastic.co/guide/en/ecs/current/ecs-service.html
+        """
+        # Collect explicit parameters (only non-None values)
+        params = {}
+        if ephemeral_id is not None:
+            params['ephemeral_id'] = ephemeral_id
+        if id is not None:
+            params['id'] = id
+        if name is not None:
+            params['name'] = name
+        if state is not None:
+            params['state'] = state
+        if type is not None:
+            params['type'] = type
+        if version is not None:
+            params['version'] = version
+
+        # Merge with defaults (defaults don't override explicit params)
+        defaults = self._get_defaults_for(Service)
+        if defaults:
+            for key, value in defaults.items():
+                if key not in params:
+                    params[key] = value
+
+        # Merge with kwargs (kwargs override everything)
+        params.update(kwargs)
+
+        self._base.add_object(Service(**params))
         return self
 
     def source(self, address: str = None, bytes: int = None, domain: str = None, ip: str = None, mac: str = None,
                packets: int = None, port: int = None, **kwargs):
-        defaults = self.__get_defaults_for(Source)
-        if defaults:
-            kwargs.update(defaults)
+        """Add ECS source fields.
 
-        self._base.add_object(Source(address=address, bytes=bytes, domain=domain, ip=ip, mac=mac, packets=packets,
-                                     port=port, **kwargs))
+        Fields about the source (initiator) side of a network connection.
+
+        Returns:
+            Logger instance for method chaining.
+
+        See:
+            https://www.elastic.co/guide/en/ecs/current/ecs-source.html
+        """
+        # Collect explicit parameters (only non-None values)
+        params = {}
+        if address is not None:
+            params['address'] = address
+        if bytes is not None:
+            params['bytes'] = bytes
+        if domain is not None:
+            params['domain'] = domain
+        if ip is not None:
+            params['ip'] = ip
+        if mac is not None:
+            params['mac'] = mac
+        if packets is not None:
+            params['packets'] = packets
+        if port is not None:
+            params['port'] = port
+
+        # Merge with defaults (defaults don't override explicit params)
+        defaults = self._get_defaults_for(Source)
+        if defaults:
+            for key, value in defaults.items():
+                if key not in params:
+                    params[key] = value
+
+        # Merge with kwargs (kwargs override everything)
+        params.update(kwargs)
+
+        self._base.add_object(Source(**params))
         return self
 
     def url(self, domain: str = None, fragment: str = None, full: str = None, original: str = None,
             password: str = None, path: str = None, port: int = None, query: str = None, scheme: str = None,
             username: str = None, **kwargs):
-        defaults = self.__get_defaults_for(Url)
-        if defaults:
-            kwargs.update(defaults)
+        """Add ECS URL fields.
 
-        self._base.add_object(Url(domain=domain, fragment=fragment, full=full, original=original, password=password,
-                                  path=path, port=port, query=query, scheme=scheme, username=username, **kwargs))
+        Information about parsed URLs.
+
+        Returns:
+            Logger instance for method chaining.
+
+        See:
+            https://www.elastic.co/guide/en/ecs/current/ecs-url.html
+        """
+        # Collect explicit parameters (only non-None values)
+        params = {}
+        if domain is not None:
+            params['domain'] = domain
+        if fragment is not None:
+            params['fragment'] = fragment
+        if full is not None:
+            params['full'] = full
+        if original is not None:
+            params['original'] = original
+        if password is not None:
+            params['password'] = password
+        if path is not None:
+            params['path'] = path
+        if port is not None:
+            params['port'] = port
+        if query is not None:
+            params['query'] = query
+        if scheme is not None:
+            params['scheme'] = scheme
+        if username is not None:
+            params['username'] = username
+
+        # Merge with defaults (defaults don't override explicit params)
+        defaults = self._get_defaults_for(Url)
+        if defaults:
+            for key, value in defaults.items():
+                if key not in params:
+                    params[key] = value
+
+        # Merge with kwargs (kwargs override everything)
+        params.update(kwargs)
+
+        self._base.add_object(Url(**params))
         return self
 
-    def user(self, email: str = None, full_name: str = None, hash: str = None, id: str = None, name: str = None,
-             **kwargs):
-        defaults = self.__get_defaults_for(User)
-        if defaults:
-            kwargs.update(defaults)
+    def user(self, email: Optional[str] = None, full_name: Optional[str] = None,
+             hash: Optional[str] = None, id: Optional[str] = None, name: Optional[str] = None,
+             **kwargs) -> 'Logger':
+        """Add ECS user fields to the log entry.
 
-        self._base.add_object(User(email=email, full_name=full_name, hash=hash, id=id, name=name, **kwargs))
+        The user fields describe information about the user relevant to the event.
+
+        Args:
+            email: User email address
+            full_name: User's full name
+            hash: Unique user hash for anonymization
+            id: Unique user identifier
+            name: Short username
+            **kwargs: Additional user fields (e.g., domain, roles)
+
+        Returns:
+            Logger instance for method chaining.
+
+        Example:
+            >>> Logger().user(name="alice", email="alice@example.com", id="1234")
+
+        See:
+            https://www.elastic.co/guide/en/ecs/current/ecs-user.html
+        """
+        # Collect explicit parameters (only non-None values)
+        params = {}
+        if email is not None:
+            params['email'] = email
+        if full_name is not None:
+            params['full_name'] = full_name
+        if hash is not None:
+            params['hash'] = hash
+        if id is not None:
+            params['id'] = id
+        if name is not None:
+            params['name'] = name
+
+        # Merge with defaults (defaults don't override explicit params)
+        defaults = self._get_defaults_for(User)
+        if defaults:
+            for key, value in defaults.items():
+                if key not in params:
+                    params[key] = value
+
+        # Merge with kwargs (kwargs override everything)
+        params.update(kwargs)
+
+        self._base.add_object(User(**params))
         return self
 
     def user_agent(self, device_name: str = None, name: str = None, original: str = None, version: str = None,
                    **kwargs):
-        defaults = self.__get_defaults_for(UserAgent)
-        if defaults:
-            kwargs.update(defaults)
+        """Add ECS user agent fields.
 
-        self._base.add_object(UserAgent(device_name=device_name, name=name, original=original, version=version,
-                                        **kwargs))
+        Information about the user agent (browser, app).
+
+        Returns:
+            Logger instance for method chaining.
+
+        See:
+            https://www.elastic.co/guide/en/ecs/current/ecs-user_agent.html
+        """
+        # Collect explicit parameters (only non-None values)
+        params = {}
+        if device_name is not None:
+            params['device_name'] = device_name
+        if name is not None:
+            params['name'] = name
+        if original is not None:
+            params['original'] = original
+        if version is not None:
+            params['version'] = version
+
+        # Merge with defaults (defaults don't override explicit params)
+        defaults = self._get_defaults_for(UserAgent)
+        if defaults:
+            for key, value in defaults.items():
+                if key not in params:
+                    params[key] = value
+
+        # Merge with kwargs (kwargs override everything)
+        params.update(kwargs)
+
+        self._base.add_object(UserAgent(**params))
         return self
 
-    def out(self, severity: Severity = Severity.DEBUG):
-        assert isinstance(severity, Severity)
+    def out(self, severity: Severity = Severity.DEBUG) -> None:
+        """Output the current log entry and reset state.
 
-        self.__append_log_level(severity)
+        Serializes the current log entry to JSON and writes it to stdout,
+        then resets the internal Base object for the next log entry.
+
+        Only outputs if severity >= severity_output_level threshold.
+
+        Args:
+            severity: The severity level for this log entry. Defaults to DEBUG.
+
+        Raises:
+            InvalidTypeError: If severity is not a Severity enum member.
+
+        Example:
+            >>> Logger().event(action="login").out(Severity.INFO)
+            {"@timestamp": "...", "event": {"action": "login"}, ...}
+        """
+        if not isinstance(severity, Severity):
+            raise InvalidTypeError(f"severity must be a Severity, got {type(severity).__name__}")
+
+        self._append_log_level(severity)
 
         if severity >= self._severity_output_level:
-            self.__output()
+            self._output()
 
-        # Reset
+        # Reset for next log entry
         self.base()
 
-    def __get_defaults_for(self, obj: type) -> Optional[dict]:
-        name = str(obj.__name__).lower()
+    def _get_defaults_for(self, obj: type) -> Optional[Dict[str, Any]]:
+        """Get default values for a field type.
+
+        Args:
+            obj: The field class to get defaults for.
+
+        Returns:
+            Dictionary of default values, or None if no defaults are configured.
+        """
+        name = obj.__name__.lower()
         if name in self._defaults:
             return self._defaults[name]
         return None
 
-    def __output(self):
-        """
-        The internal function that handles/passes on the printing
+    def _output(self) -> None:
+        """Output the current log entry to stdout.
+
+        In development mode, outputs pretty-printed colored JSON.
+        In production mode, outputs compact single-line JSON.
         """
         if self._dev:
             pprint(BaseSchema().dump(self._base), output_destination=sys.stdout)
         else:
             sys.stdout.write((BaseSchema().dumps(self._base))+'\n')
 
-    def __append_log_level(self, severity_level: Severity):
-        # Append log level if doesn't exist
+    def _append_log_level(self, severity_level: Severity) -> None:
+        """Add or update the log.level field with the severity.
+
+        If a LogLine field already exists with a level, it is not overwritten.
+        Otherwise, creates a new LogLine field with the given severity.
+
+        Args:
+            severity_level: The severity level to set.
+        """
         if hasattr(self._base, "logline"):
             if self._base.logline.level is None:
                 self._base.logline.level = severity_level
